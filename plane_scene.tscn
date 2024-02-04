@@ -1,0 +1,10 @@
+[gd_scene load_steps=3 format=3 uid="uid://bj8fedcs5lyak"]
+
+[ext_resource type="Script" path="res://Area2D.gd" id="1_7tdot"]
+[ext_resource type="Texture2D" uid="uid://cgectfepw2bjk" path="res://blue_plane.png" id="2_i4836"]
+
+[node name="plane_scene" type="Area2D"]
+script = ExtResource("1_7tdot")
+
+[node name="Sprite2D" type="Sprite2D" parent="."]
+texture = ExtResource("2_i4836")

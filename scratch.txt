@@ -1,0 +1,89 @@
+extends Node
+
+# This variable will hold your game log data.
+var game_log = {}
+var current_turn = 0
+var is_playing = false
+var plane_instances = {}
+var time_since_last_turn = 0.0
+var turn_delay = 0.5
+
+# Preload the plane scene
+var PlaneScene = preload("res://plane_scene.tscn") # Adjust the path as necessary
+
+# Called when the node enters the scene tree for the first time.
+func _ready():
+	print("Loading game log.")
+	load_game_log("res://test_glog.json") # Adjust the path as necessary
+	set_process(false) # Disable _process until we hit 'play'
+	print("Main game controller ready.")
+	update_game_state_for_current_turn()
+	update_turn_display()
+
+# This function could be called to load and parse the game log.
+func load_game_log(path):
+	var file = FileAccess.open(path, FileAccess.READ)
+	var json_text = file.get_as_text()
+	var json = JSON.new()
+	game_log = json.parse_string(json_text)
+	file.close()
+	print("Game log loaded: ", game_log)
+
+# Updates the display of the current turn.
+func update_turn_display():
+	var turn_label = get_node("Control/HBoxContainer/Label") # Adjust the path as necessary
+	if turn_label:
+		turn_label.text = "Turn: %d" % current_turn
+	else:
+		print("TurnLabel node not found")
+
+# Function to handle the play button press.
+func _on_play_button_pressed():
+	print("Playing.")
+	is_playing = true
+	set_process(true) # Enable _process to start game logic updates
+
+# Function to handle the pause button press.
+func _on_pause_button_pressed():
+	print("Paused.")
+	is_playing = false
+	set_process(false) # Stop game logic updates
+
+# Function to handle the step button press.
+func _on_step_button_pressed():
+	print("Stepped.")
+	current_turn += 1
+	if current_turn >= game_log.turns.size():
+		current_turn = 0 # Loop back to the start
+	update_game_state_for_current_turn()
+	update_turn_display()
+
+# initial (x1, y1) to new (x2, y2)
+# every _process call, incrememtally transition from initial to new point
+
+
+# Called every frame. 'delta' is the elapsed time since the previous frame.
+func _process(delta):
+	if is_playing:
+		time_since_last_turn += delta
+		if time_since_last_turn >= turn_delay:
+			time_since_last_turn = 0.0 # Reset the timer
+			_on_step_button_pressed() # Go to the next turn
+
+# Updates the game state for the current turn.
+func update_game_state_for_current_turn():
+	for plane_id in plane_instances:
+		plane_instances[plane_id].queue_free()
+	plane_instances.clear()
+
+	var turn_data = game_log["turns"][current_turn]["planes"]
+	for plane_id in turn_data:
+		var plane_data = turn_data[plane_id]
+		var new_plane = PlaneScene.instantiate()
+		add_child(new_plane)
+		new_plane.position = Vector2(plane_data["position"]["x"], plane_data["position"]["y"])
+		new_plane.rotation_degrees = plane_data["angle"]
+		new_plane.scale = Vector2(0.2, 0.2) # Adjust this scale factor as needed
+		plane_instances[plane_id] = new_plane
+
+	print("Turn updated to: ", current_turn)
