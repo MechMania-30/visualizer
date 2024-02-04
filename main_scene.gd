@@ -6,7 +6,7 @@ var current_turn = 0
 var is_playing = false
 var plane_instances = {}
 var time_since_last_turn = 0.0
-var turn_delay = 0.2
+var turn_delay = 0.5
 
 var screen_width = 1000
 var screen_height = 1000
@@ -142,7 +142,7 @@ func update_game_state_for_current_turn():
 		plane_instance.queue_free()
 	plane_instances.clear()
 
-	var planes = game_log.turns[current_turn / 30].planes  # Use floor division to find the "turn"
+	var planes = game_log.turns[current_turn].planes  # Use floor division to find the "turn"
 	for i in range(planes.size()):
 		var plane_data = planes[i]
 		var new_plane = PlaneScene.instantiate()
