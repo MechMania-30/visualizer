@@ -142,7 +142,9 @@ func update_game_state_for_current_turn():
 		plane_instance.queue_free()
 	plane_instances.clear()
 
-	var planes = game_log.turns[current_turn].planes  # Use floor division to find the "turn"
+	if current_turn >= game_log.turns.size():
+		current_turn = 0
+	var planes = game_log.turns[current_turn].planes
 	for i in range(planes.size()):
 		var plane_data = planes[i]
 		var new_plane = PlaneScene.instantiate()
