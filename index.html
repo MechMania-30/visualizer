@@ -114,16 +114,29 @@
         let team1totalHealth = 0;
         const teamColors = ['Cyan', 'DarkOrange'];
         const damageFlashDuration = 100; // milliseconds
-        const damageEvents = {};
+        let damageEvents = {};
 
         const bluePlaneImage = new Image();
-        bluePlaneImage.src = 'blue_plane_outline.png';
+        bluePlaneImage.src = 'graphics/blue_plane_outline.png';
         const redPlaneImage = new Image();
-        redPlaneImage.src = 'red_plane_outline.png';
+        redPlaneImage.src = 'graphics/red_plane_outline.png';
+        const blueFortressImage = new Image();
+        blueFortressImage.src = 'graphics/blue_fortress.png';
+        const redFortressImage = new Image();
+        redFortressImage.src = 'graphics/red_fortress.png';
+        const blueScrapImage = new Image();
+        blueScrapImage.src = 'graphics/blue_scrap.png';
+        const redScrapImage = new Image();
+        redScrapImage.src = 'graphics/red_scrap.png';
+        const blueThunderImage = new Image();
+        blueThunderImage.src = 'graphics/blue_thunder.png';
+        const redThunderImage = new Image();
+        redThunderImage.src = 'graphics/red_thunder.png';
         const backgroundImage = new Image();
-        backgroundImage.src = 'map_clear.png';
+        backgroundImage.src = 'graphics/map_clear.png';
 
         function parseDamageEvents() {
+            damageEvents = {};
             if (gameLog.damageEvents) {
                 gameLog.damageEvents.forEach(event => {
                     const turn = Math.floor(event.turn);
@@ -372,14 +385,6 @@
             ctx.stroke();
             ctx.setLineDash([]);
 
-            // Draw 3x3 dot around the actual position
-            ctx.fillStyle = 'red';
-            for (let dx = -1; dx <= 1; dx++) {
-                for (let dy = -1; dy <= 1; dy++) {
-                    ctx.fillRect(canvasPos.x + dx, canvasPos.y + dy, 1, 1);
-                }
-            }
-
             ctx.save();
             ctx.translate(canvasPos.x, canvasPos.y);
             ctx.rotate((-interpolated.angle + 90) * Math.PI / 180); // Rotate an extra 90 degrees
@@ -387,17 +392,31 @@
             const planeImage = currentPlane.team === 0 ? bluePlaneImage : redPlaneImage;
             const planeSize = 28; // 40 * 0.7 (30% reduction)
 
-            // Draw the attack cone first
-            drawAttackCone(ctx, currentPlane);
-
             // Draw the plane image
             ctx.drawImage(planeImage, -planeSize / 2, -planeSize / 2, planeSize, planeSize);
+
+            // Draw the attack cone second
+            drawAttackCone(ctx, currentPlane);
+
+            ctx.restore();
+
+            // Draw 3x3 dot around the actual position (now on top of plane and attack cone)
+            ctx.fillStyle = 'white';
+            for (let dx = -1; dx <= 1; dx++) {
+                for (let dy = -1; dy <= 1; dy++) {
+                    ctx.fillRect(canvasPos.x + dx, canvasPos.y + dy, 1, 1);
+                }
+            }
 
             // Check if the plane was damaged in this turn
             const currentTurnEvents = damageEvents[currentTurn] || [];
             const wasAttacked = currentTurnEvents.some(event => event.attacked === currentPlane.id);
 
             if (wasAttacked) {
+                ctx.save();
+                ctx.translate(canvasPos.x, canvasPos.y);
+                ctx.rotate((-interpolated.angle + 90) * Math.PI / 180);
+
                 const timeSinceStart = performance.now() - animationStartTime;
                 const flashProgress = (timeSinceStart % damageFlashDuration) / damageFlashDuration;
                 if (flashProgress < 0.5) {
@@ -406,9 +425,9 @@
                     ctx.fillRect(-planeSize / 2, -planeSize / 2, planeSize, planeSize);
                     ctx.globalAlpha = 1;
                 }
-            }
 
-            ctx.restore();
+                ctx.restore();
+            }
         }
 
         function drawAttackCone(ctx, plane) {
