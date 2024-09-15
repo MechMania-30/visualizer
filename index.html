@@ -1,0 +1,648 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Game Log Visualizer</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+        }
+
+        canvas {
+            border: 1px solid #000;
+        }
+
+        #controls,
+        #fileUpload {
+            margin-top: 10px;
+        }
+
+        button,
+        input {
+            margin: 0 5px;
+        }
+
+        #controls {
+            display: none;
+        }
+
+        #gameContainer {
+            display: flex;
+            justify-content: space-between;
+            width: 1000px;
+        }
+        .scoreboard {
+            width: 100px;
+            padding: 10px;
+            background-color: #f0f0f0;
+            border: 1px solid #ccc;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="fileUpload">
+        <input type="file" id="fileInput" accept=".json">
+        <button id="loadButton">Load Game Log</button>
+    </div>
+    <div id="gameContainer">
+        <div id="team0Scoreboard" class="scoreboard"></div>
+        <canvas id="gameCanvas" width="800" height="800"></canvas>
+        <div id="team1Scoreboard" class="scoreboard"></div>
+    </div>
+    <div id="controls">
+        <button id="playPauseBtn">Play</button>
+        <button id="prevTurnBtn">Previous Turn</button>
+        <button id="nextTurnBtn">Next Turn</button>
+        <input type="range" id="turnSlider" min="0" max="1" value="0">
+        <span id="turnDisplay">Turn: 0</span>
+        <label for="turnDuration">Turn Duration (ms):</label>
+        <input type="number" id="turnDuration" min="10" max="5000" step="10" value="100">
+        <label for="jumpTurn">Jump to Turn:</label>
+        <input type="number" id="jumpTurn" min="0" value="0">
+        <button id="jumpBtn">Jump</button>
+    </div>
+    <div id="keyboardControls">
+        Keyboard Controls: Space (Play/Pause), Left Arrow (Previous Turn), Right Arrow (Next Turn)
+    </div>
+    <div id="note">
+       <b>*planes that die in the middle of a turn may linger awkwardly during animation</b>
+       <br>
+       <b>*clicking Next Turn plays out one animated turn</b>
+       <br>
+       <b>*no clue if flashing red when damaged works</b>
+    </div>
+
+    <script>
+        let gameLog = null;
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const fileInput = document.getElementById('fileInput');
+        const loadButton = document.getElementById('loadButton');
+        const controlsDiv = document.getElementById('controls');
+        const playPauseBtn = document.getElementById('playPauseBtn');
+        const prevTurnBtn = document.getElementById('prevTurnBtn');
+        const nextTurnBtn = document.getElementById('nextTurnBtn');
+        const turnSlider = document.getElementById('turnSlider');
+        const turnDisplay = document.getElementById('turnDisplay');
+        const turnDurationInput = document.getElementById('turnDuration');
+        const jumpTurnInput = document.getElementById('jumpTurn');
+        const jumpBtn = document.getElementById('jumpBtn');
+
+        let currentTurn = 0;
+        let isPlaying = false;
+        let lastTimestamp = 0;
+        const frameDuration = 1000 / 60; // 60 FPS
+        let turnDuration = 100; // 100 milliseconds per turn by default
+        const trailLength = 3; // Number of past turns to show in the trail
+        const explosionDuration = 3; // Number of turns for explosion animation
+        let explosions = {}; // Store ongoing explosions
+        let destroyedPlanes = new Set(); // Track planes that have been destroyed
+
+        let animationFrameId = null;
+        let accumulatedTime = 0;
+
+        let isAnimatingTurn = false;
+        let animationStartTime = 0;
+        let team0totalHealth = 0;
+        let team1totalHealth = 0;
+        const teamColors = ['Cyan', 'DarkOrange'];
+        const damageFlashDuration = 100; // milliseconds
+        const damageEvents = {};
+
+        const bluePlaneImage = new Image();
+        bluePlaneImage.src = 'blue_plane_outline.png';
+        const redPlaneImage = new Image();
+        redPlaneImage.src = 'red_plane_outline.png';
+        const backgroundImage = new Image();
+        backgroundImage.src = 'map_clear.png';
+
+        function parseDamageEvents() {
+            if (gameLog.damageEvents) {
+                gameLog.damageEvents.forEach(event => {
+                    const turn = Math.floor(event.turn);
+                    if (!damageEvents[turn]) {
+                        damageEvents[turn] = [];
+                    }
+                    damageEvents[turn].push(event);
+                });
+            }
+        }
+
+        function gameToCanvasCoords(x, y) {
+            const scaleX = canvas.width / 100;
+            const scaleY = canvas.height / 100;
+            return {
+                x: (x + 50) * scaleX,
+                y: canvas.height - (y + 50) * scaleY
+            };
+        }
+
+        loadButton.addEventListener('click', () => {
+            const file = fileInput.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    try {
+                        gameLog = JSON.parse(e.target.result);
+                        initializeVisualization();
+                    } catch (error) {
+                        console.log(error); 
+                        alert('Error parsing the file. Please make sure it\'s a valid JSON file.');
+                    }
+                };
+                reader.readAsText(file);
+            } else {
+                alert('Please select a file first.');
+            }
+        });
+
+        function initializeVisualization() {
+            if (!gameLog || !gameLog.turns || gameLog.turns.length === 0) {
+                alert('Invalid game log format.');
+                return;
+            }
+
+            currentTurn = 0;
+            isPlaying = false;
+            explosions = {};
+            destroyedPlanes.clear();
+            playPauseBtn.textContent = 'Play';
+            turnSlider.max = gameLog.turns.length - 2;
+            jumpTurnInput.max = gameLog.turns.length - 2;
+            updateTurnDisplay();
+            drawScene(0);
+
+            controlsDiv.style.display = 'block';
+
+            team0totalHealth = 0
+            team1totalHealth = 0
+            Object.values(gameLog.turns[0].planes).forEach(plane => {
+                if (plane.team == 0) {
+                    team0totalHealth += plane.health;
+                } else {
+                    team1totalHealth += plane.health;
+                }
+            });
+
+            team0Score = 0;
+            team1Score = 0;
+            updateScoreboard();
+            parseDamageEvents();
+        }
+
+        function drawGrid() {
+            ctx.drawImage(backgroundImage, 0, 0, canvas.width, canvas.height);
+
+            ctx.strokeStyle = 'rgba(200, 200, 200, 0.5)';
+            ctx.lineWidth = 0.5;
+
+            for (let x = 0; x <= 100; x += 10) {
+                const canvasX = x * canvas.width / 100;
+                ctx.beginPath();
+                ctx.moveTo(canvasX, 0);
+                ctx.lineTo(canvasX, canvas.height);
+                ctx.stroke();
+            }
+
+            for (let y = 0; y <= 100; y += 10) {
+                const canvasY = (100 - y) * canvas.height / 100;
+                ctx.beginPath();
+                ctx.moveTo(0, canvasY);
+                ctx.lineTo(canvas.width, canvasY);
+                ctx.stroke();
+            }
+        }
+
+        function drawLabels() {
+            ctx.fillStyle = 'black';
+            ctx.font = '12px Arial';
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'top';
+            ctx.fillText('(-50,-50)', 5, canvas.height - 15);
+
+            ctx.textAlign = 'right';
+            ctx.textBaseline = 'bottom';
+            ctx.fillText('(50,50)', canvas.width - 5, 15);
+        }
+
+        function drawCompass() {
+            const centerX = 75;
+            const centerY = 75;
+            const radius = 40;
+
+            ctx.save();
+            ctx.translate(centerX, centerY);
+
+            ctx.beginPath();
+            ctx.arc(0, 0, radius, 0, 2 * Math.PI);
+            ctx.strokeStyle = 'black';
+            ctx.stroke();
+
+            ctx.font = '12px Arial';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillStyle = 'black';
+
+            ctx.fillText('90°', 0, -radius - 10);
+            ctx.fillText('0°', radius + 10, 0);
+            ctx.fillText('270°', 0, radius + 10);
+            ctx.fillText('180°', -radius - 10, 0);
+
+            ctx.beginPath();
+            ctx.moveTo(0, -radius);
+            ctx.lineTo(0, radius);
+            ctx.moveTo(-radius, 0);
+            ctx.lineTo(radius, 0);
+            ctx.stroke();
+
+            ctx.restore();
+        }
+
+        function isPlaneDestroyedAtTurn(planeId, turn) {
+            for (let i = turn; i >= 0; i--) {
+                const plane = gameLog.turns[i].planes[planeId];
+                if (plane) {
+                    return plane.health === 0;
+                }
+            }
+            return false;
+        }
+
+        function drawScene(interpolationFactor) {
+            if (!gameLog) return;
+
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            drawGrid();
+            drawLabels();
+            drawCompass();
+
+            const currentTurnData = gameLog.turns[currentTurn];
+            const nextTurnData = gameLog.turns[currentTurn + 1] || currentTurnData;
+
+            // Reset destroyedPlanes set
+            destroyedPlanes.clear();
+
+            // Check for destroyed planes at the current turn
+            Object.values(currentTurnData.planes).forEach(plane => {
+                if (isPlaneDestroyedAtTurn(plane.id, currentTurn)) {
+                    destroyedPlanes.add(plane.id);
+                    if (!explosions[plane.id]) {
+                        const canvasPos = gameToCanvasCoords(plane.position.x, plane.position.y);
+                        explosions[plane.id] = {
+                            startTurn: currentTurn,
+                            x: canvasPos.x,
+                            y: canvasPos.y,
+                            color: plane.team === 0 ? 'Cyan' : 'DarkOrange'
+                        };
+                    }
+                }
+            });
+
+            Object.values(currentTurnData.planes).forEach(plane => {
+                if (!isPlaneDestroyedAtTurn(plane.id, currentTurn)) {
+                    const nextPlane = nextTurnData.planes[plane.id];
+                    const trailPositions = [];
+                    for (let i = 1; i <= trailLength; i++) {
+                        const pastTurn = Math.max(0, currentTurn - i);
+                        const pastPlane = gameLog.turns[pastTurn].planes[plane.id];
+                        if (pastPlane && !isPlaneDestroyedAtTurn(plane.id, pastTurn)) {
+                            trailPositions.push(pastPlane.position);
+                        } else {
+                            break;
+                        }
+                    }
+                    drawPlane(plane, nextPlane, interpolationFactor, trailPositions);
+                }
+            });
+
+            drawExplosions(interpolationFactor);
+            updateScoreboard();
+        }
+
+        function interpolateState(startPos, endPos, startAngle, endAngle, fraction) {
+            // Linear interpolation for position
+            const x = startPos.x + (endPos.x - startPos.x) * fraction;
+            const y = startPos.y + (endPos.y - startPos.y) * fraction;
+
+            // Angle interpolation
+            let angleDiff = endAngle - startAngle;
+            if (angleDiff > 180) angleDiff -= 360;
+            if (angleDiff < -180) angleDiff += 360;
+            const angle = (startAngle + angleDiff * fraction + 360) % 360;
+
+            return {
+                position: { x, y },
+                angle: angle
+            };
+        }
+
+        function drawPlane(currentPlane, nextPlane, interpolationFactor, trailPositions) {
+            console.log(currentPlane)
+            const interpolated = interpolateState(
+                currentPlane.position,
+                nextPlane.position,
+                currentPlane.angle,
+                nextPlane.angle,
+                interpolationFactor
+            );
+
+            const canvasPos = gameToCanvasCoords(interpolated.position.x, interpolated.position.y);
+
+            if (currentPlane.health === 0) {
+                return; // Don't draw the plane if it's destroyed
+            }
+
+            // Draw trail
+            ctx.beginPath();
+            ctx.setLineDash([5, 5]);
+            ctx.moveTo(canvasPos.x, canvasPos.y);
+            for (let i = 0; i < trailPositions.length; i++) {
+                const trailCanvasPos = gameToCanvasCoords(trailPositions[i].x, trailPositions[i].y);
+                ctx.lineTo(trailCanvasPos.x, trailCanvasPos.y);
+            }
+            ctx.strokeStyle = currentPlane.team === 0 ? 'rgba(0, 255, 255, 0.5)' : 'rgba(255, 140, 0, 0.5)';
+            ctx.stroke();
+            ctx.setLineDash([]);
+
+            // Draw 3x3 dot around the actual position
+            ctx.fillStyle = 'red';
+            for (let dx = -1; dx <= 1; dx++) {
+                for (let dy = -1; dy <= 1; dy++) {
+                    ctx.fillRect(canvasPos.x + dx, canvasPos.y + dy, 1, 1);
+                }
+            }
+
+            ctx.save();
+            ctx.translate(canvasPos.x, canvasPos.y);
+            ctx.rotate((-interpolated.angle + 90) * Math.PI / 180); // Rotate an extra 90 degrees
+
+            const planeImage = currentPlane.team === 0 ? bluePlaneImage : redPlaneImage;
+            const planeSize = 28; // 40 * 0.7 (30% reduction)
+
+            // Draw the attack cone first
+            drawAttackCone(ctx, currentPlane);
+
+            // Draw the plane image
+            ctx.drawImage(planeImage, -planeSize / 2, -planeSize / 2, planeSize, planeSize);
+
+            // Check if the plane was damaged in this turn
+            const currentTurnEvents = damageEvents[currentTurn] || [];
+            const wasAttacked = currentTurnEvents.some(event => event.attacked === currentPlane.id);
+
+            if (wasAttacked) {
+                const timeSinceStart = performance.now() - animationStartTime;
+                const flashProgress = (timeSinceStart % damageFlashDuration) / damageFlashDuration;
+                if (flashProgress < 0.5) {
+                    ctx.globalAlpha = 0.5;
+                    ctx.fillStyle = 'Red';
+                    ctx.fillRect(-planeSize / 2, -planeSize / 2, planeSize, planeSize);
+                    ctx.globalAlpha = 1;
+                }
+            }
+
+            ctx.restore();
+        }
+
+        function drawAttackCone(ctx, plane) {
+            const planeStats = gameLog.planeStats[plane.type];
+            const attackRange = planeStats.attackRange * canvas.width / 100;
+            const spreadAngle = planeStats.attackSpreadAngle * Math.PI / 180;
+
+            ctx.save();
+            ctx.rotate(-Math.PI / 2); // Rotate the cone 90 degrees counterclockwise
+
+            ctx.beginPath();
+            ctx.moveTo(0, 0);
+            ctx.arc(0, 0, attackRange, -spreadAngle / 2, spreadAngle / 2);
+            ctx.closePath();
+
+            const baseColor = plane.team === 0 ? [0, 255, 255] : [255, 140, 0];
+            ctx.fillStyle = `rgba(${baseColor[0]}, ${baseColor[1]}, ${baseColor[2]}, 0.2)`;
+            ctx.fill();
+
+            ctx.strokeStyle = `rgba(${baseColor[0]}, ${baseColor[1]}, ${baseColor[2]}, 0.5)`;
+            ctx.stroke();
+
+            ctx.restore();
+        }
+
+        function drawExplosions(interpolationFactor) {
+            const currentTime = currentTurn + interpolationFactor;
+            for (const [planeId, explosion] of Object.entries(explosions)) {
+                if (!isPlaneDestroyedAtTurn(planeId, currentTurn)) {
+                    continue; // Skip drawing explosion if plane is not destroyed at current turn
+                }
+
+                const elapsedTurns = currentTime - explosion.startTurn;
+                if (elapsedTurns >= explosionDuration) {
+                    continue; // Keep the explosion in the list, but don't draw it
+                }
+
+                const progress = elapsedTurns / explosionDuration;
+                const radius = progress * 30;
+                const alpha = 1 - progress;
+
+                ctx.beginPath();
+                ctx.arc(explosion.x, explosion.y, radius, 0, 2 * Math.PI);
+                ctx.strokeStyle = explosion.color === 'Cyan' ? `rgba(0, 255, 255, ${alpha})` : `rgba(255, 140, 0, ${alpha})`;
+                ctx.lineWidth = 3;
+                ctx.stroke();
+            }
+        }
+
+        function update(timestamp) {
+            if (!gameLog || !isPlaying) return;
+
+            animationFrameId = requestAnimationFrame(update);
+
+            const deltaTime = timestamp - lastTimestamp;
+            lastTimestamp = timestamp;
+            accumulatedTime += deltaTime;
+
+            while (accumulatedTime >= turnDuration) {
+                currentTurn = (currentTurn + 1) % (gameLog.turns.length - 1);
+                updateTurnDisplay();
+                accumulatedTime -= turnDuration;
+            }
+
+            const interpolationFactor = accumulatedTime / turnDuration;
+            drawScene(interpolationFactor);
+        }
+
+        function startAnimation() {
+            if (!animationFrameId) {
+                lastTimestamp = performance.now();
+                accumulatedTime = 0;
+                animationFrameId = requestAnimationFrame(update);
+            }
+        }
+
+        function stopAnimation() {
+            if (animationFrameId) {
+                cancelAnimationFrame(animationFrameId);
+                animationFrameId = null;
+            }
+        }
+
+        function updateTurnDisplay() {
+            turnSlider.value = currentTurn;
+            turnDisplay.textContent = `Turn: ${currentTurn}`;
+        }
+
+        playPauseBtn.addEventListener('click', () => {
+            isPlaying = !isPlaying;
+            playPauseBtn.textContent = isPlaying ? 'Pause' : 'Play';
+            if (isPlaying) {
+                startAnimation();
+            } else {
+                stopAnimation();
+            }
+        });
+
+        prevTurnBtn.addEventListener('click', () => {
+            stopAnimation();
+            isPlaying = false;
+            playPauseBtn.textContent = 'Play';
+            currentTurn = Math.max(0, currentTurn - 1);
+            updateTurnDisplay();
+            drawScene(0);
+        });
+
+        nextTurnBtn.addEventListener('click', () => {
+            if (isAnimatingTurn) return; // Prevent clicking during animation
+            if (currentTurn < gameLog.turns.length - 2) {
+                isAnimatingTurn = true;
+                animationStartTime = performance.now();
+                animateNextTurn();
+            }
+        });
+
+        function animateNextTurn() {
+            const currentTime = performance.now();
+            const elapsedTime = currentTime - animationStartTime;
+            const progress = Math.min(elapsedTime / turnDuration, 1);
+
+            drawScene(progress);
+
+            if (progress < 1 || elapsedTime < damageFlashDuration) {
+                requestAnimationFrame(animateNextTurn);
+            } else {
+                currentTurn++;
+                isAnimatingTurn = false;
+                updateTurnDisplay();
+                drawScene(0);
+            }
+        }
+
+        function togglePlayPause() {
+            isPlaying = !isPlaying;
+            playPauseBtn.textContent = isPlaying ? 'Pause' : 'Play';
+            if (isPlaying) {
+                startAnimation();
+            } else {
+                stopAnimation();
+            }
+        }
+
+        function goToNextTurn() {
+            stopAnimation();
+            isPlaying = false;
+            playPauseBtn.textContent = 'Play';
+            currentTurn = Math.min(gameLog.turns.length - 2, currentTurn + 1);
+            updateTurnDisplay();
+            drawScene(0);
+        }
+
+        function goToPreviousTurn() {
+            stopAnimation();
+            isPlaying = false;
+            playPauseBtn.textContent = 'Play';
+            currentTurn = Math.max(0, currentTurn - 1);
+            updateTurnDisplay();
+            drawScene(0);
+        }
+
+        turnSlider.addEventListener('input', () => {
+            stopAnimation();
+            isPlaying = false;
+            playPauseBtn.textContent = 'Play';
+            currentTurn = parseInt(turnSlider.value);
+            updateTurnDisplay();
+            drawScene(0);
+        });
+
+        turnDurationInput.addEventListener('change', () => {
+            turnDuration = parseInt(turnDurationInput.value);
+        });
+
+        jumpBtn.addEventListener('click', () => {
+            const jumpToTurn = parseInt(jumpTurnInput.value);
+            if (isNaN(jumpToTurn) || jumpToTurn < 0 || jumpToTurn >= gameLog.turns.length - 1) {
+                alert('Invalid turn number. Please enter a number between 0 and ' + (gameLog.turns.length - 2) + '.');
+                return;
+            }
+            
+            stopAnimation();
+            isPlaying = false;
+            playPauseBtn.textContent = 'Play';
+            currentTurn = jumpToTurn;
+            updateTurnDisplay();
+            drawScene(0);
+        });
+
+        document.addEventListener('keydown', (event) => {
+            if (!gameLog) return; // Don't process keyboard events if no game is loaded
+
+            switch (event.code) {
+                case 'Space':
+                    event.preventDefault(); // Prevent scrolling
+                    togglePlayPause();
+                    break;
+                case 'ArrowLeft':
+                    event.preventDefault();
+                    goToPreviousTurn();
+                    break;
+                case 'ArrowRight':
+                    event.preventDefault();
+                    goToNextTurn();
+                    break;
+            }
+        });
+
+        function updateScoreboard() {
+            const currentTurnData = gameLog.turns[currentTurn];
+            const team0Scoreboard = document.getElementById('team0Scoreboard');
+            const team1Scoreboard = document.getElementById('team1Scoreboard');
+
+            team0Scoreboard.innerHTML = `<h3 style="color: ${teamColors[0]}">Team 0</h3>`;
+            team1Scoreboard.innerHTML = `<h3 style="color: ${teamColors[1]}">Team 1</h3>`;
+
+            let team0CurrentHealth = 0;
+            let team1CurrentHealth = 0;
+            Object.values(currentTurnData.planes).forEach(plane => {
+                const scoreboard = plane.team === 0 ? team0Scoreboard : team1Scoreboard;
+                scoreboard.innerHTML += `<p>P${plane.id}: ${plane.health}</p>`;
+                if (plane.team == 0) {
+                    team0CurrentHealth += plane.health;
+                } else {
+                    team1CurrentHealth += plane.health;
+                }
+            });
+
+            team0Score = team1totalHealth - team1CurrentHealth;
+            team1Score = team0totalHealth - team0CurrentHealth;
+            team0Scoreboard.innerHTML += `<h4>Score: ${team0Score}</h4>`;
+            team1Scoreboard.innerHTML += `<h4>Score: ${team1Score}</h4>`;
+        }
+    </script>
+</body>
+
+</html>
