@@ -57,6 +57,7 @@
 <body>
     <div id="fileUpload">
         <input type="file" id="fileInput" accept=".json">
+        <button id="textFileInput">Paste gamelog</button>
     </div>
     <div id="gameContainer">
         <div id="team0Scoreboard" class="scoreboard"></div>
@@ -87,6 +88,7 @@
         const canvas = document.getElementById('gameCanvas');
         const ctx = canvas.getContext('2d');
         const fileInput = document.getElementById('fileInput');
+        const textFileInput = document.getElementById('textFileInput');
         const controlsDiv = document.getElementById('controls');
         const playPauseBtn = document.getElementById('playPauseBtn');
         const prevTurnBtn = document.getElementById('prevTurnBtn');
@@ -159,27 +161,34 @@
             };
         }
 
+        function readJSON(text) {
+            try {
+                gameLog = JSON.parse(text);
+            } catch (error) {
+                console.log(error);
+                alert("Error parsing the file. Please make sure it's a valid JSON file.");
+            }
+            try {
+                initializeVisualization();
+            } catch (error) {
+                console.log(error); 
+                alert("Error initializing visualizer. Please make sure it's the correct gamelog.");
+            }
+        }
+
         fileInput.addEventListener("change", (event) => {
             const file = fileInput.files[0];
             if (file) {
-
                 const reader = new FileReader();
                 reader.onload = (e) => {
-                    try {
-                        gameLog = JSON.parse(e.target.result);
-                    } catch (error) {
-                        console.log(error);
-                        alert("Error parsing the file. Please make sure it's a valid JSON file.");
-                    }
-                    try {
-                        initializeVisualization();
-                    } catch (error) {
-                        console.log(error); 
-                        alert("Error initializing visualizer. Please make sure it's the correct gamelog.");
-                    }
+                    readJSON(e.target.result);
                 };
                 reader.readAsText(file);
             }
+        })
+
+        textFileInput.addEventListener("click", (event) => {
+            readJSON(prompt("Paste gamelog json:"))
         })
 
         function initializeVisualization() {
