@@ -42,6 +42,14 @@
             padding: 10px;
             background-color: #f0f0f0;
             border: 1px solid #ccc;
+            display: flex;
+            flex-direction: column;
+            height: 800px;
+        }
+
+        .scoreboard div {
+            flex-grow: 1;
+            overflow-y: scroll;
         }
     </style>
 </head>
@@ -160,10 +168,15 @@
                 reader.onload = (e) => {
                     try {
                         gameLog = JSON.parse(e.target.result);
+                    } catch (error) {
+                        console.log(error);
+                        alert("Error parsing the file. Please make sure it's a valid JSON file.");
+                    }
+                    try {
                         initializeVisualization();
                     } catch (error) {
                         console.log(error); 
-                        alert('Error parsing the file. Please make sure it\'s a valid JSON file.');
+                        alert("Error initializing visualizer. Please make sure it's the correct gamelog.");
                     }
                 };
                 reader.readAsText(file);
@@ -637,14 +650,17 @@
             const team0Scoreboard = document.getElementById('team0Scoreboard');
             const team1Scoreboard = document.getElementById('team1Scoreboard');
 
-            team0Scoreboard.innerHTML = `<h3 style="color: ${teamColors[0]}">Team 0</h3>`;
-            team1Scoreboard.innerHTML = `<h3 style="color: ${teamColors[1]}">Team 1</h3>`;
-
+            let team0HTML = `<h3 style="color: ${teamColors[0]}">Team 0</h3><div>`
+            let team1HTML = `<h3 style="color: ${teamColors[1]}">Team 1</h3><div>`
+                    
             let team0CurrentHealth = 0;
             let team1CurrentHealth = 0;
             Object.values(currentTurnData.planes).forEach(plane => {
-                const scoreboard = plane.team === 0 ? team0Scoreboard : team1Scoreboard;
-                scoreboard.innerHTML += `<p>P${plane.id}: ${plane.health}</p>`;
+                if (plane.team === 0) {
+                    team0HTML += `<p>P${plane.id}: ${plane.health}</p>`;
+                } else {
+                    team1HTML += `<p>P${plane.id}: ${plane.health}</p>`;
+                }
                 if (plane.team == 0) {
                     team0CurrentHealth += plane.health;
                 } else {
@@ -654,8 +670,11 @@
 
             team0Score = team1totalHealth - team1CurrentHealth;
             team1Score = team0totalHealth - team0CurrentHealth;
-            team0Scoreboard.innerHTML += `<h4>Score: ${team0Score}</h4>`;
-            team1Scoreboard.innerHTML += `<h4>Score: ${team1Score}</h4>`;
+            team0HTML += `</div><h4>Score: ${team0Score}</h4>`;
+            team1HTML += `</div><h4>Score: ${team1Score}</h4>`;
+
+            team0Scoreboard.innerHTML = team0HTML
+            team1Scoreboard.innerHTML = team1HTML
         }
     </script>
 </body>
