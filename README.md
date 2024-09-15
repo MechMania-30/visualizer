@@ -2,7 +2,6 @@
 
 ## Usage
 - Click Choose File button to upload JSON-formatted gamelog
-- Click Load Game Log button to load uploaded gamelog
 - 3 buttons: Play, Previous Turn, Next Turn
     - Clicking Next Turn plays out turn animation
 - Alternative keyboard controls
