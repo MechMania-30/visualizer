@@ -79,9 +79,6 @@
     <div id="keyboardControls">
         Keyboard Controls: Space (Play/Pause), Left Arrow (Previous Turn), Right Arrow (Next Turn)
     </div>
-    <div id="note">
-       <b>*planes that die in the middle of a turn may linger awkwardly during animation</b>
-    </div>
 
     <script>
         let gameLog = null;
@@ -315,10 +312,8 @@
             const currentTurnData = gameLog.turns[currentTurn];
             const nextTurnData = gameLog.turns[currentTurn + 1] || currentTurnData;
 
-            // Reset destroyedPlanes set
             destroyedPlanes.clear();
 
-            // Check for destroyed planes at the current turn
             Object.values(currentTurnData.planes).forEach(plane => {
                 if (isPlaneDestroyedAtTurn(plane.id, currentTurn)) {
                     destroyedPlanes.add(plane.id);
@@ -356,11 +351,9 @@
         }
 
         function interpolateState(startPos, endPos, startAngle, endAngle, fraction) {
-            // Linear interpolation for position
             const x = startPos.x + (endPos.x - startPos.x) * fraction;
             const y = startPos.y + (endPos.y - startPos.y) * fraction;
 
-            // Angle interpolation
             let angleDiff = endAngle - startAngle;
             if (angleDiff > 180) angleDiff -= 360;
             if (angleDiff < -180) angleDiff += 360;
@@ -384,10 +377,9 @@
             const canvasPos = gameToCanvasCoords(interpolated.position.x, interpolated.position.y);
 
             if (currentPlane.health === 0) {
-                return; // Don't draw the plane if it's destroyed
+                return;
             }
 
-            // Draw trail
             ctx.beginPath();
             ctx.setLineDash([5, 5]);
             ctx.moveTo(canvasPos.x, canvasPos.y);
@@ -401,20 +393,39 @@
 
             ctx.save();
             ctx.translate(canvasPos.x, canvasPos.y);
-            ctx.rotate((-interpolated.angle + 90) * Math.PI / 180); // Rotate an extra 90 degrees
+            ctx.rotate((-interpolated.angle + 90) * Math.PI / 180);
 
-            const planeImage = currentPlane.team === 0 ? bluePlaneImage : redPlaneImage;
-            const planeSize = 28; // 40 * 0.7 (30% reduction)
+            let planeImage;
+            let planeSize = 25;
+            switch (currentPlane.type) {
+                case 'STANDARD':
+                    planeImage = currentPlane.team === 0 ? bluePlaneImage : redPlaneImage;
+                    break;
+                case 'FLYING_FORTRESS':
+                    planeImage = currentPlane.team === 0 ? blueFortressImage : redFortressImage;
+                    break;
+                case 'THUNDERBIRD':
+                    planeImage = currentPlane.team === 0 ? blueThunderImage : redThunderImage;
+                    break;
+                case 'SCRAPYARD_RESCUE':
+                    planeImage = currentPlane.team === 0 ? blueScrapImage : redScrapImage;
+                    break;
+                case 'PIGEON':
+                    ctx.fillStyle = currentPlane.team === 0 ? 'blue' : 'red';
+                    ctx.fillRect(-1.5, -1.5, 5, 5);
+                    break;
+                default:
+                    planeImage = currentPlane.team === 0 ? bluePlaneImage : redPlaneImage;
+            }
 
-            // Draw the plane image
-            ctx.drawImage(planeImage, -planeSize / 2, -planeSize / 2, planeSize, planeSize);
+            if (currentPlane.type !== 'PIGEON') {
+                ctx.drawImage(planeImage, -planeSize / 2, -planeSize / 2, planeSize, planeSize);
+            }
 
-            // Draw the attack cone second
             drawAttackCone(ctx, currentPlane);
 
             ctx.restore();
 
-            // Draw 3x3 dot around the actual position (now on top of plane and attack cone)
             ctx.fillStyle = 'white';
             for (let dx = -1; dx <= 1; dx++) {
                 for (let dy = -1; dy <= 1; dy++) {
@@ -422,7 +433,6 @@
                 }
             }
 
-            // Check if the plane was damaged in this turn
             const currentTurnEvents = damageEvents[currentTurn] || [];
             const wasAttacked = currentTurnEvents.some(event => event.attacked === currentPlane.id);
 
@@ -450,7 +460,7 @@
             const spreadAngle = planeStats.attackSpreadAngle * Math.PI / 180;
 
             ctx.save();
-            ctx.rotate(-Math.PI / 2); // Rotate the cone 90 degrees counterclockwise
+            ctx.rotate(-Math.PI / 2);
 
             ctx.beginPath();
             ctx.moveTo(0, 0);
@@ -471,12 +481,12 @@
             const currentTime = currentTurn + interpolationFactor;
             for (const [planeId, explosion] of Object.entries(explosions)) {
                 if (!isPlaneDestroyedAtTurn(planeId, currentTurn)) {
-                    continue; // Skip drawing explosion if plane is not destroyed at current turn
+                    continue;
                 }
 
                 const elapsedTurns = currentTime - explosion.startTurn;
                 if (elapsedTurns >= explosionDuration) {
-                    continue; // Keep the explosion in the list, but don't draw it
+                    continue;
                 }
 
                 const progress = elapsedTurns / explosionDuration;
@@ -550,7 +560,7 @@
         });
 
         nextTurnBtn.addEventListener('click', () => {
-            if (isAnimatingTurn) return; // Prevent clicking during animation
+            if (isAnimatingTurn) return;
             if (currentTurn < gameLog.turns.length - 2) {
                 isAnimatingTurn = true;
                 animationStartTime = performance.now();
@@ -632,11 +642,11 @@
         });
 
         document.addEventListener('keydown', (event) => {
-            if (!gameLog) return; // Don't process keyboard events if no game is loaded
+            if (!gameLog) return;
 
             switch (event.code) {
                 case 'Space':
-                    event.preventDefault(); // Prevent scrolling
+                    event.preventDefault();
                     togglePlayPause();
                     break;
                 case 'ArrowLeft':
