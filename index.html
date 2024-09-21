@@ -202,7 +202,6 @@
             turnSlider.max = gameLog.turns.length - 2;
             jumpTurnInput.max = gameLog.turns.length - 2;
             updateTurnDisplay();
-            drawScene(0);
 
             controlsDiv.style.display = 'block';
 
@@ -218,8 +217,10 @@
 
             team0Score = 0;
             team1Score = 0;
-            updateScoreboard();
+            initializeScoreboard();
             parseDamageEvents();
+            
+            drawScene(0);
         }
 
         function drawGrid() {
@@ -660,36 +661,54 @@
             }
         });
 
-        function updateScoreboard() {
-            const currentTurnData = gameLog.turns[currentTurn];
+        let team0ScoreboardContent, team1ScoreboardContent;
+
+        function initializeScoreboard() {
             const team0Scoreboard = document.getElementById('team0Scoreboard');
             const team1Scoreboard = document.getElementById('team1Scoreboard');
 
-            let team0HTML = `<h3 style="color: ${teamColors[0]}">Team 0</h3><div>`
-            let team1HTML = `<h3 style="color: ${teamColors[1]}">Team 1</h3><div>`
-                    
-            let team0CurrentHealth = 0;
-            let team1CurrentHealth = 0;
+            team0ScoreboardContent = `<h3 style="color: ${teamColors[0]}">Team 0</h3><div id="team0Planes"></div><h4 id="team0Score"></h4>`;
+            team1ScoreboardContent = `<h3 style="color: ${teamColors[1]}">Team 1</h3><div id="team1Planes"></div><h4 id="team1Score"></h4>`;
+
+            team0Scoreboard.innerHTML = team0ScoreboardContent;
+            team1Scoreboard.innerHTML = team1ScoreboardContent;
+            updateScoreboard();
+        }
+
+        function updateScoreboard() {
+            const currentTurnData = gameLog.turns[currentTurn];
+            const team0Planes = document.getElementById('team0Planes');
+            const team1Planes = document.getElementById('team1Planes');
+            const team0ScoreElement = document.getElementById('team0Score');
+            const team1ScoreElement = document.getElementById('team1Score');
+            
+            let team0HTML = '';
+            let team1HTML = '';
+            let team0Score = 0;
+            let team1Score = 0;
+
             Object.values(currentTurnData.planes).forEach(plane => {
-                if (plane.team === 0) {
-                    team0HTML += `<p>P${plane.id}: ${plane.health}</p>`;
-                } else {
-                    team1HTML += `<p>P${plane.id}: ${plane.health}</p>`;
-                }
-                if (plane.team == 0) {
-                    team0CurrentHealth += plane.health;
-                } else {
-                    team1CurrentHealth += plane.health;
+                if (plane.health > 0) {
+                    const planeType = plane.type;
+                    const planeCost = gameLog.planeStats[planeType].cost;
+                    const planeMaxHealth = gameLog.planeStats[planeType].maxHealth;
+                    const healthPercentage = plane.health / planeMaxHealth;
+                    const weightedScore = planeCost * healthPercentage;
+
+                    if (plane.team === 0) {
+                        team0HTML += `<p>P${plane.id}: ${plane.health}</p>`;
+                        team0Score += weightedScore;
+                    } else {
+                        team1HTML += `<p>P${plane.id}: ${plane.health}</p>`;
+                        team1Score += weightedScore;
+                    }
                 }
             });
 
-            team0Score = team1totalHealth - team1CurrentHealth;
-            team1Score = team0totalHealth - team0CurrentHealth;
-            team0HTML += `</div><h4>Score: ${team0Score}</h4>`;
-            team1HTML += `</div><h4>Score: ${team1Score}</h4>`;
-
-            team0Scoreboard.innerHTML = team0HTML
-            team1Scoreboard.innerHTML = team1HTML
+            team0Planes.innerHTML = team0HTML;
+            team1Planes.innerHTML = team1HTML;
+            team0ScoreElement.textContent = `Score: ${team0Score.toFixed(1)}`;
+            team1ScoreElement.textContent = `Score: ${team1Score.toFixed(1)}`;
         }
     </script>
 </body>
