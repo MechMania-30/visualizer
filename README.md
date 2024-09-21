@@ -18,6 +18,12 @@ The visualizer lets you visualize the gamelog's output from the engine! Watch th
 
 </div>
 
+## Installation
+
+No installation required! Just go to [**our website's live version**](https://mechmania.org/visualizer/)!
+
+Alternatively, you can download the repo and run the `index.html` locally.
+
 ## Usage
 - Click Choose File button to upload JSON-formatted gamelog
 - 3 buttons: Play, Previous Turn, Next Turn
